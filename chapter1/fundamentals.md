@@ -12,10 +12,11 @@ This will include:
 - How to visualize the solution
 
 The Poisson equation is the following boundary-value problem
-$\begin{eqnarray}
--\nabla^2 u(\mathbf{x}) &= f(\mathbf{x})&&\mathbf{x} \in \Omega\\
-u(\mathbf{x}) &= u_D(\mathbf{x})&& \mathbf{x} \in \partial\Omega
-\end{eqnarray}$
+
+\begin{align}
+-\nabla^2 u(\mathbf{x}) &= f(\mathbf{x}) && \mathbf{x} \in \Omega \\
+u(\mathbf{x}) &= u_D(\mathbf{x}) && \mathbf{x} \in \partial\Omega
+\end{align}
 
 Here, $u=u(\mathbf{x})$ is the unknown function, $f=f(\mathbf{x})$ is a prescribed function, $\nabla^2$ the Laplace operator, often written as $\Delta$, $\Omega$ the spatial domain, and $\partial\Omega$ is the boundary of $\Omega$. The Poisson problem, including both the PDE $-\nabla^2 u = f$ and the boundary condition $u=u_D$ on $\partial\Omega$, is an example of a _boundary-value problem_, which must be precisely state before it makes sense to start solving it numerically with FEniCSx. 
 
