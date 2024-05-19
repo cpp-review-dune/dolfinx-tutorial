@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.16.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -17,9 +17,10 @@
 # Author: Jørgen S. Dokken
 #
 # In this section, we will learn how to prescribe Dirichlet boundary conditions on a component of your unknown $u_h$.
-# We will illustrate the problem using a `VectorElement`. However, the method generalizes to any `MixedElement`.
+# We will illustrate the problem using a vector element. However, the method generalizes to any mixed element.
 #
 # We will use a slightly modified version of [the linear elasticity demo](./../chapter2/linearelasticity_code), namely
+#
 # $$
 # -\nabla \cdot \sigma (u) = f\quad \text{in } \Omega,
 # $$
@@ -41,35 +42,33 @@
 # $$
 # We will consider a two dimensional box spanning $[0,L]\times[0,H]$, where
 # $\partial\Omega_N$ is the left and right side of the beam, $\partial\Omega_D$ the bottom of the  beam, while $\partial\Omega_{Dx}$ is the right side of the beam.
-# We will prescribe a displacement $u_x=0$ on the right side of the beam, while the beam is being deformed under its own weight. The sides of the box is traction free.
+# We will prescribe a displacement $u_x=0$ on the right side of the beam, while the beam is being deformed under its own weight. The sides of the box are traction free.
+
+# +
+import pyvista
+import numpy as np
+from mpi4py import MPI
+from ufl import Identity, Measure, TestFunction, TrialFunction, dot, dx, inner, grad, nabla_div, sym
+from dolfinx import default_scalar_type
+from dolfinx.mesh import CellType, create_rectangle, locate_entities_boundary
+from dolfinx.fem.petsc import LinearProblem
+from dolfinx.fem import (Constant, dirichletbc, Function, functionspace, locate_dofs_geometrical,
+                         locate_dofs_topological)
+from dolfinx.plot import vtk_mesh
 
 L = 1
 H = 1.3
-lambda_ = 1.25 
+lambda_ = 1.25
 mu = 1
 rho = 1
 g = 1
-
-# As in the previous demos, we define our mesh and function space. We will create a `ufl.VectorElement` to create a two dimensional vector space.
-
-# +
-from dolfinx.fem import (Constant, dirichletbc, Function, FunctionSpace, locate_dofs_geometrical,
-                         locate_dofs_topological)
-from dolfinx.fem.petsc import LinearProblem
-from dolfinx.mesh import CellType, create_rectangle, locate_entities_boundary
-from ufl import Identity, Measure, TestFunction, TrialFunction, VectorElement, dot, dx, inner, grad, nabla_div, sym
-from mpi4py import MPI
-from petsc4py.PETSc import ScalarType
-
-import numpy as np
-import pyvista
-
-mesh = create_rectangle(MPI.COMM_WORLD, np.array([[0,0],[L, H]]), [30,30], cell_type=CellType.triangle)
-element = VectorElement("CG", mesh.ufl_cell(), 1)
-V = FunctionSpace(mesh, element)
-
-
 # -
+
+# As in the previous demos, we define our mesh and function space.
+
+mesh = create_rectangle(MPI.COMM_WORLD, np.array([[0, 0], [L, H]]), [30, 30], cell_type=CellType.triangle)
+V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim , )))
+
 
 # ## Boundary conditions
 # As we would like to clamp the boundary at $x=0$, we do this by using a marker function, we use `dolfinx.fem.locate_dofs_geometrical` to identify the relevant degrees of freedom.
@@ -78,7 +77,8 @@ V = FunctionSpace(mesh, element)
 def clamped_boundary(x):
     return np.isclose(x[1], 0)
 
-u_zero = np.array((0,)*mesh.geometry.dim, dtype=ScalarType)
+
+u_zero = np.array((0,) * mesh.geometry.dim, dtype=default_scalar_type)
 bc = dirichletbc(u_zero, locate_dofs_geometrical(V, clamped_boundary), V)
 
 
@@ -91,17 +91,19 @@ bc = dirichletbc(u_zero, locate_dofs_geometrical(V, clamped_boundary), V)
 
 def right(x):
     return np.logical_and(np.isclose(x[0], L), x[1] < H)
-boundary_facets = locate_entities_boundary(mesh, mesh.topology.dim-1, right)
-boundary_dofs_x = locate_dofs_topological(V.sub(0), mesh.topology.dim-1, boundary_facets)
+
+
+boundary_facets = locate_entities_boundary(mesh, mesh.topology.dim - 1, right)
+boundary_dofs_x = locate_dofs_topological(V.sub(0), mesh.topology.dim - 1, boundary_facets)
 
 # We can now create our Dirichlet condition
 
-bcx = dirichletbc(ScalarType(0), boundary_dofs_x, V.sub(0))
+bcx = dirichletbc(default_scalar_type(0), boundary_dofs_x, V.sub(0))
 bcs = [bc, bcx]
 
 # As we want the traction $T$ over the remaining boundary to be $0$, we create a `dolfinx.Constant`
 
-T = Constant(mesh, ScalarType((0, 0)))
+T = Constant(mesh, default_scalar_type((0, 0)))
 
 # We also want to specify the integration measure $\mathrm{d}s$, which should be the integral over the boundary of our domain. We do this by using `ufl`, and its built in integration measures
 
@@ -113,13 +115,16 @@ ds = Measure("ds", domain=mesh)
 
 # +
 def epsilon(u):
-    return sym(grad(u)) 
+    return sym(grad(u))
+
+
 def sigma(u):
-    return lambda_ * nabla_div(u) * Identity(len(u)) + 2*mu*epsilon(u)
+    return lambda_ * nabla_div(u) * Identity(len(u)) + 2 * mu * epsilon(u)
+
 
 u = TrialFunction(V)
 v = TestFunction(V)
-f = Constant(mesh, ScalarType((0, -rho*g)))
+f = Constant(mesh, default_scalar_type((0, -rho * g)))
 a = inner(sigma(u), epsilon(v)) * dx
 L = dot(f, v) * dx + dot(T, v) * ds
 # -
@@ -134,26 +139,22 @@ uh = problem.solve()
 
 # +
 pyvista.start_xvfb()
-from dolfinx.plot import create_vtk_mesh
 
 # Create plotter and pyvista grid
 p = pyvista.Plotter()
-topology, cell_types, x = create_vtk_mesh(V)
+topology, cell_types, x = vtk_mesh(V)
 grid = pyvista.UnstructuredGrid(topology, cell_types, x)
 
 # Attach vector values to grid and warp grid by vector
 
 vals = np.zeros((x.shape[0], 3))
-vals[:,:len(uh)] = uh.x.array.reshape((x.shape[0], len(uh)))
+vals[:, :len(uh)] = uh.x.array.reshape((x.shape[0], len(uh)))
 grid["u"] = vals
 actor_0 = p.add_mesh(grid, style="wireframe", color="k")
 warped = grid.warp_by_vector("u", factor=1.5)
-actor_1 = p.add_mesh(warped,opacity=0.8)
+actor_1 = p.add_mesh(warped, opacity=0.8)
 p.view_xy()
 if not pyvista.OFF_SCREEN:
     p.show()
 else:
     fig_array = p.screenshot(f"component.png")
-# -
-
-
